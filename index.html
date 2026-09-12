@@ -80,7 +80,7 @@
             height: 100vh;
         }
     </style>
-    <!-- Three.js & Cannon.js 라이브러리 CDN 로드 -->
+    <!-- Three.js & Cannon.js CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 </head>
@@ -133,8 +133,7 @@
 
         // 물리 엔진(Cannon.js) 설정
         world = new CANNON.World();
-        world.gravity.set(0, -16, 0); // 중력 강화
-        world.broadphase = new CANNON.NaiveBroadphase();
+        world.gravity.set(0, -16, 0);
         world.solver.iterations = 10;
 
         // 조명 설정
@@ -144,13 +143,7 @@
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(10, 25, 15);
         dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 2048;
-        dirLight.shadow.mapSize.height = 2048;
         scene.add(dirLight);
-
-        const pointLight = new THREE.PointLight(0x3b82f6, 1.5, 40);
-        pointLight.position.set(0, 0, 10);
-        scene.add(pointLight);
 
         // 맵 및 장애물 생성
         buildEnvironment();
@@ -171,7 +164,7 @@
         createWall(-5.5, 0, 0.5, 1, 28, 2);
         createWall(5.5, 0, 0.5, 1, 28, 2);
 
-        // 1. 핀(장애물 못) 배치 (플린코 스타일)
+        // 핀(장애물 못) 배치 - 안정적인 Box 형태 사용
         const rows = 6;
         const startY = 7;
         const spacingY = 2.3;
@@ -186,12 +179,12 @@
             }
         }
 
-        // 2. 회전하는 장애물 (스피너) 추가 - 구슬을 무작위로 쳐냄
+        // 회전하는 장애물 (스피너)
         createRotatingSpinner(-2.2, -1, 0, 3.5);
         createRotatingSpinner(2.2, -3.5, 0, -4);
         createRotatingSpinner(0, -6, 0, 4.5);
 
-        // 3. 지그재그 경사로 추가
+        // 경사로 추가
         createRamp(-2.5, -9, 0, 5, 0.4, 2, Math.PI / 8);
         createRamp(2.5, -11, 0, 5, 0.4, 2, -Math.PI / 8);
     }
@@ -205,18 +198,14 @@
     }
 
     function createPin(x, y, z) {
-        const radius = 0.35;
-        const height = 0.7;
-        
-        const shape = new CANNON.Cylinder(radius, radius, height, 8);
+        const size = 0.35;
+        const shape = new CANNON.Box(new CANNON.Vec3(size, size, size));
         const body = new CANNON.Body({ mass: 0 });
         body.addShape(shape);
         body.position.set(x, y, z);
-        body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.PI / 2);
         world.addBody(body);
 
-        const geom = new THREE.CylinderGeometry(radius, radius, height, 16);
-        geom.rotateX(Math.PI / 2);
+        const geom = new THREE.BoxGeometry(size*2, size*2, size*2);
         const mat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, metalness: 0.8, roughness: 0.2 });
         const mesh = new THREE.Mesh(geom, mat);
         mesh.position.set(x, y, z);
@@ -283,19 +272,17 @@
         labelsContainer.innerHTML = '';
         isRunning = true;
 
-        // 새 구슬 생성
+        // 새 구슬 생성 (안전한 생성 코드)
         names.forEach((name, index) => {
             const radius = 0.45;
             const color = new THREE.Color(`hsl(${index * (360 / names.length)}, 90%, 60%)`);
 
             const shape = new CANNON.Sphere(radius);
             const body = new CANNON.Body({
-                mass: 1,
-                material: new CANNON.Material({ restitution: 0.6, friction: 0.1 })
+                mass: 1
             });
             body.addShape(shape);
             
-            // 상단 무작위 위치에 시간차를 두고 스폰
             const spawnX = (Math.random() - 0.5) * 3.5;
             const spawnY = 12 + index * 0.7;
             const spawnZ = (Math.random() - 0.5) * 0.4;
@@ -314,7 +301,6 @@
             mesh.castShadow = true;
             scene.add(mesh);
 
-            // 이름표 HTML 요소 생성
             const label = document.createElement('div');
             label.className = 'name-tag';
             label.innerText = name;
@@ -340,19 +326,16 @@
         if (isRunning && dt < 0.1) {
             world.step(1 / 60, dt, 3);
 
-            // 장애물 회전 업데이트
             rotatingSpinners.forEach(s => {
                 const angle = time * 0.001 * s.speed;
                 s.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), angle);
                 s.mesh.quaternion.copy(s.body.quaternion);
             });
 
-            // 구슬 위치 및 이름표 좌표 갱신
             marbles.forEach(m => {
                 m.mesh.position.copy(m.body.position);
                 m.mesh.quaternion.copy(m.body.quaternion);
 
-                // 3D 좌표를 2D 화면 좌표로 변환하여 이름표 위치 고정
                 const vector = m.body.position.clone();
                 vector.y += 0.75; 
                 vector.project(camera);
@@ -370,7 +353,6 @@
                     }
                 }
 
-                // 결승선 통과 체크 (y < -13.5)
                 if (!m.finished && m.body.position.y < -13.5) {
                     m.finished = true;
                     rankings.push(m.name);
