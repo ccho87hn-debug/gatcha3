@@ -2,258 +2,410 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>마블 룰렛 (Marble Roulette)</title>
+    <title>3D 마블 룰렛 (Marble Roulette)</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1a1a1a;
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
             margin: 0;
+            overflow: hidden;
+            background-color: #0b0b0b;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
         }
-        .container {
-            display: flex;
-            gap: 20px;
-            background: #2a2a2a;
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(20, 20, 20, 0.85);
             padding: 20px;
             border-radius: 12px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
-        }
-        .control-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 200px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            width: 240px;
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255,255,255,0.1);
         }
         textarea {
             width: 100%;
-            height: 200px;
-            background: #333;
+            height: 140px;
+            background: #1a1a1a;
             color: #fff;
-            border: 1px solid #555;
+            border: 1px solid #444;
             border-radius: 6px;
             padding: 10px;
             resize: none;
             font-size: 14px;
+            box-sizing: border-box;
         }
         button {
-            background-color: #4CAF50;
+            width: 100%;
+            background: linear-gradient(135deg, #4CAF50, #2e7d32);
             color: white;
             border: none;
-            padding: 10px;
+            padding: 12px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
             font-weight: bold;
+            margin-top: 10px;
+            transition: 0.2s;
         }
         button:hover {
-            background-color: #45a049;
+            background: linear-gradient(135deg, #558b2f, #33691e);
+            transform: translateY(-1px);
         }
-        canvas {
-            background: #111;
-            border-radius: 8px;
-            border: 2px solid #444;
-        }
-        #winner {
-            margin-top: 10px;
-            font-size: 18px;
+        #winner-board {
+            margin-top: 15px;
+            font-size: 14px;
             font-weight: bold;
             color: #ffeb3b;
-            text-align: center;
-            min-height: 30px;
+            max-height: 180px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }
+        .name-tag {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            color: white;
+            font-size: 11px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2px 6px;
+            border-radius: 4px;
+            pointer-events: none;
+            white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
         }
     </style>
+    <!-- Three.js & Cannon.js 라이브러리 CDN 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
 </head>
 <body>
 
-    <div class="container">
-        <div class="control-panel">
-            <h3>참가자 이름 입력</h3>
-            <textarea id="namesInput">참가자1
+<div id="ui-container">
+    <h3>3D 마블 룰렛</h3>
+    <textarea id="namesInput">참가자1
 참가자2
 참가자3
 참가자4
-참가자5</textarea>
-            <button onclick="startRace()">룰렛 시작!</button>
-            <div id="winner"></div>
-        </div>
-        <div>
-            <canvas id="rouletteCanvas" width="400" height="600"></canvas>
-        </div>
-    </div>
+참가자5
+참가자6
+참가자7</textarea>
+    <button onclick="startRoulette()">3D 레이스 시작!</button>
+    <div id="winner-board"></div>
+</div>
+
+<div id="labels-container"></div>
+<div id="canvas-container"></div>
 
 <script>
-    const canvas = document.getElementById('rouletteCanvas');
-    const ctx = canvas.getContext('2d');
-
+    let scene, camera, renderer;
+    let world;
     let marbles = [];
-    let pegs = [];
+    let rotatingSpinners = [];
     let isRunning = false;
-    let animationId;
+    let rankings = [];
 
-    // 장애물(핀) 생성
-    function createPegs() {
-        pegs = [];
-        const rows = 8;
-        const startY = 120;
-        const spacingY = 50;
+    const canvasContainer = document.getElementById('canvas-container');
+    const labelsContainer = document.getElementById('labels-container');
 
-        for (let r = 0; r < rows; r++) {
-            const cols = (r % 2 === 0) ? 5 : 6;
-            const spacingX = canvas.width / (cols + 1);
-            for (let c = 0; c < cols; c++) {
-                const x = spacingX * (c + 1) + (r % 2 === 0 ? 0 : spacingX / 2);
-                const y = startY + r * spacingY;
-                pegs.push({ x, y, radius: 6 });
-            }
-        }
+    function init() {
+        // 3D 씬 설정
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0b0b0f);
+        scene.fog = new THREE.FogExp2(0x0b0b0f, 0.025);
+
+        // 카메라 설정
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 4, 23);
+        camera.lookAt(0, -1, 0);
+
+        // 렌더러 설정
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        canvasContainer.appendChild(renderer.domElement);
+
+        // 물리 엔진(Cannon.js) 설정
+        world = new CANNON.World();
+        world.gravity.set(0, -16, 0); // 중력 강화
+        world.broadphase = new CANNON.NaiveBroadphase();
+        world.solver.iterations = 10;
+
+        // 조명 설정
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        dirLight.position.set(10, 25, 15);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        const pointLight = new THREE.PointLight(0x3b82f6, 1.5, 40);
+        pointLight.position.set(0, 0, 10);
+        scene.add(pointLight);
+
+        // 맵 및 장애물 생성
+        buildEnvironment();
+
+        window.addEventListener('resize', onWindowResize);
+        animate(0);
     }
 
-    function startRace() {
+    function buildEnvironment() {
+        // 배경 보드 판
+        const bgGeo = new THREE.PlaneGeometry(18, 32);
+        const bgMat = new THREE.MeshStandardMaterial({ color: 0x14141c, roughness: 0.9 });
+        const bgMesh = new THREE.Mesh(bgGeo, bgMat);
+        bgMesh.position.set(0, 0, -1.5);
+        scene.add(bgMesh);
+
+        // 좌우 벽면
+        createWall(-5.5, 0, 0.5, 1, 28, 2);
+        createWall(5.5, 0, 0.5, 1, 28, 2);
+
+        // 1. 핀(장애물 못) 배치 (플린코 스타일)
+        const rows = 6;
+        const startY = 7;
+        const spacingY = 2.3;
+
+        for (let r = 0; r < rows; r++) {
+            const cols = (r % 2 === 0) ? 4 : 5;
+            const spacingX = 9 / (cols + 1);
+            for (let c = 0; c < cols; c++) {
+                const x = -4.5 + spacingX * (c + 1) + (r % 2 === 0 ? 0 : spacingX / 2);
+                const y = startY - r * spacingY;
+                createPin(x, y, 0);
+            }
+        }
+
+        // 2. 회전하는 장애물 (스피너) 추가 - 구슬을 무작위로 쳐냄
+        createRotatingSpinner(-2.2, -1, 0, 3.5);
+        createRotatingSpinner(2.2, -3.5, 0, -4);
+        createRotatingSpinner(0, -6, 0, 4.5);
+
+        // 3. 지그재그 경사로 추가
+        createRamp(-2.5, -9, 0, 5, 0.4, 2, Math.PI / 8);
+        createRamp(2.5, -11, 0, 5, 0.4, 2, -Math.PI / 8);
+    }
+
+    function createWall(x, y, z, sx, sy, sz) {
+        const shape = new CANNON.Box(new CANNON.Vec3(sx/2, sy/2, sz/2));
+        const body = new CANNON.Body({ mass: 0 });
+        body.addShape(shape);
+        body.position.set(x, y, z);
+        world.addBody(body);
+    }
+
+    function createPin(x, y, z) {
+        const radius = 0.35;
+        const height = 0.7;
+        
+        const shape = new CANNON.Cylinder(radius, radius, height, 8);
+        const body = new CANNON.Body({ mass: 0 });
+        body.addShape(shape);
+        body.position.set(x, y, z);
+        body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), Math.PI / 2);
+        world.addBody(body);
+
+        const geom = new THREE.CylinderGeometry(radius, radius, height, 16);
+        geom.rotateX(Math.PI / 2);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, metalness: 0.8, roughness: 0.2 });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(x, y, z);
+        mesh.castShadow = true;
+        scene.add(mesh);
+    }
+
+    function createRotatingSpinner(x, y, z, speed) {
+        const length = 4;
+        const thickness = 0.4;
+        
+        const shape = new CANNON.Box(new CANNON.Vec3(length/2, thickness/2, thickness/2));
+        const body = new CANNON.Body({ mass: 0 });
+        body.addShape(shape);
+        body.position.set(x, y, z);
+        world.addBody(body);
+
+        const geom = new THREE.BoxGeometry(length, thickness, thickness);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xff0055, metalness: 0.6, roughness: 0.2 });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.castShadow = true;
+        scene.add(mesh);
+
+        rotatingSpinners.push({ body, mesh, speed });
+    }
+
+    function createRamp(x, y, z, sx, sy, sz, angle) {
+        const shape = new CANNON.Box(new CANNON.Vec3(sx/2, sy/2, sz/2));
+        const body = new CANNON.Body({ mass: 0 });
+        body.addShape(shape);
+        body.position.set(x, y, z);
+        body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), angle);
+        world.addBody(body);
+
+        const geom = new THREE.BoxGeometry(sx, sy, sz);
+        const mat = new THREE.MeshStandardMaterial({ color: 0x9c27b0, roughness: 0.4 });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(x, y, z);
+        mesh.quaternion.copy(body.quaternion);
+        mesh.castShadow = true;
+        scene.add(mesh);
+    }
+
+    function startRoulette() {
         if (isRunning) return;
 
         const text = document.getElementById('namesInput').value;
         const names = text.split('\n').map(n => n.trim()).filter(n => n.length > 0);
 
         if (names.length === 0) {
-            alert('참가자를 한 명 이상 입력해주세요!');
+            alert('참가자를 입력해주세요!');
             return;
         }
 
-        document.getElementById('winner').innerText = '';
-        createPegs();
-
-        marbles = names.map((name, index) => {
-            return {
-                name: name,
-                x: 50 + Math.random() * (canvas.width - 100),
-                y: 20 - index * 20, 
-                vx: (Math.random() - 0.5) * 2,
-                vy: 2 + Math.random() * 2,
-                radius: 12,
-                color: `hsl(${index * (360 / names.length)}, 80%, 60%)`,
-                finished: false
-            };
+        // 기존 구슬 삭제
+        marbles.forEach(m => {
+            world.remove(m.body);
+            scene.remove(m.mesh);
+            if (m.labelElement) m.labelElement.remove();
         });
-
+        marbles = [];
+        rankings = [];
+        document.getElementById('winner-board').innerHTML = '';
+        labelsContainer.innerHTML = '';
         isRunning = true;
-        loop();
+
+        // 새 구슬 생성
+        names.forEach((name, index) => {
+            const radius = 0.45;
+            const color = new THREE.Color(`hsl(${index * (360 / names.length)}, 90%, 60%)`);
+
+            const shape = new CANNON.Sphere(radius);
+            const body = new CANNON.Body({
+                mass: 1,
+                material: new CANNON.Material({ restitution: 0.6, friction: 0.1 })
+            });
+            body.addShape(shape);
+            
+            // 상단 무작위 위치에 시간차를 두고 스폰
+            const spawnX = (Math.random() - 0.5) * 3.5;
+            const spawnY = 12 + index * 0.7;
+            const spawnZ = (Math.random() - 0.5) * 0.4;
+            body.position.set(spawnX, spawnY, spawnZ);
+            world.addBody(body);
+
+            const geom = new THREE.SphereGeometry(radius, 32, 32);
+            const mat = new THREE.MeshStandardMaterial({
+                color: color,
+                metalness: 0.4,
+                roughness: 0.15,
+                emissive: color,
+                emissiveIntensity: 0.15
+            });
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.castShadow = true;
+            scene.add(mesh);
+
+            // 이름표 HTML 요소 생성
+            const label = document.createElement('div');
+            label.className = 'name-tag';
+            label.innerText = name;
+            labelsContainer.appendChild(label);
+
+            marbles.push({
+                name: name,
+                body: body,
+                mesh: mesh,
+                labelElement: label,
+                finished: false
+            });
+        });
     }
 
-    function update() {
-        let allFinished = true;
+    let lastTime = 0;
+    function animate(time) {
+        requestAnimationFrame(animate);
 
-        marbles.forEach(m => {
-            if (m.finished) return;
+        const dt = (time - lastTime) * 0.001;
+        lastTime = time;
 
-            allFinished = false;
+        if (isRunning && dt < 0.1) {
+            world.step(1 / 60, dt, 3);
 
-            // 중력 및 이동
-            m.vy += 0.25; 
-            m.x += m.vx;
-            m.y += m.vy;
+            // 장애물 회전 업데이트
+            rotatingSpinners.forEach(s => {
+                const angle = time * 0.001 * s.speed;
+                s.body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 0, 1), angle);
+                s.mesh.quaternion.copy(s.body.quaternion);
+            });
 
-            // 벽 충돌
-            if (m.x - m.radius < 0) {
-                m.x = m.radius;
-                m.vx *= -0.5;
-            } else if (m.x + m.radius > canvas.width) {
-                m.x = canvas.width - m.radius;
-                m.vx *= -0.5;
-            }
+            // 구슬 위치 및 이름표 좌표 갱신
+            marbles.forEach(m => {
+                m.mesh.position.copy(m.body.position);
+                m.mesh.quaternion.copy(m.body.quaternion);
 
-            // 핀 충돌 체크
-            pegs.forEach(p => {
-                const dx = m.x - p.x;
-                const dy = m.y - p.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                const minDist = m.radius + p.radius;
+                // 3D 좌표를 2D 화면 좌표로 변환하여 이름표 위치 고정
+                const vector = m.body.position.clone();
+                vector.y += 0.75; 
+                vector.project(camera);
 
-                if (dist < minDist) {
-                    const angle = Math.atan2(dy, dx);
-                    const speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
-                    
-                    m.x = p.x + Math.cos(angle) * minDist;
-                    m.y = p.y + Math.sin(angle) * minDist;
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(vector.y * 0.5) + 0.5) * window.innerHeight;
 
-                    const bounce = 0.6;
-                    m.vx = Math.cos(angle) * speed * bounce + (Math.random() - 0.5) * 3;
-                    m.vy = Math.sin(angle) * speed * bounce + Math.random() * 2;
+                if (m.labelElement) {
+                    if (vector.z < 1) {
+                        m.labelElement.style.display = 'block';
+                        m.labelElement.style.left = `${x}px`;
+                        m.labelElement.style.top = `${y}px`;
+                    } else {
+                        m.labelElement.style.display = 'none';
+                    }
+                }
+
+                // 결승선 통과 체크 (y < -13.5)
+                if (!m.finished && m.body.position.y < -13.5) {
+                    m.finished = true;
+                    rankings.push(m.name);
+                    updateRankingsUI();
+
+                    if (m.labelElement) {
+                        m.labelElement.style.background = 'rgba(76, 175, 80, 0.85)';
+                        m.labelElement.innerText = `${rankings.length}등: ${m.name}`;
+                    }
                 }
             });
 
-            // 결승선 통과 체크 (y = 570)
-            if (m.y >= 570) {
-                m.y = 570;
-                m.finished = true;
-                
-                // 첫 번째로 도착한 구슬을 우승자로 설정
-                const currentWinner = document.getElementById('winner').innerText;
-                if (!currentWinner) {
-                    document.getElementById('winner').innerText = `🏆 우승: ${m.name}!`;
-                }
+            if (rankings.length === marbles.length) {
+                isRunning = false;
             }
-        });
-
-        if (allFinished) {
-            isRunning = false;
-            cancelAnimationFrame(animationId);
         }
+
+        renderer.render(scene, camera);
     }
 
-    function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // 핀 그리기
-        ctx.fillStyle = '#666';
-        pegs.forEach(p => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-            ctx.fill();
+    function updateRankingsUI() {
+        let html = '<b>🏆 실시간 순위 🏆</b><br>';
+        rankings.forEach((name, idx) => {
+            html += `${idx + 1}등: ${name}<br>`;
         });
-
-        // 결승선 그리기
-        ctx.strokeStyle = '#ff4444';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([5, 5]);
-        ctx.beginPath();
-        ctx.moveTo(0, 570);
-        ctx.lineTo(canvas.width, 570);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // 구슬 그리기
-        marbles.forEach(m => {
-            ctx.beginPath();
-            ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
-            ctx.fillStyle = m.color;
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-
-            // 이름 텍스트
-            ctx.fillStyle = '#fff';
-            ctx.font = '11px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(m.name, m.x, m.y - m.radius - 4);
-        });
+        document.getElementById('winner-board').innerHTML = html;
     }
 
-    function loop() {
-        update();
-        draw();
-        if (isRunning) {
-            animationId = requestAnimationFrame(loop);
-        }
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    createPegs();
-    draw();
+    init();
 </script>
 </body>
 </html>
