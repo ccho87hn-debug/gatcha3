@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>마블 룰렛 (Marble Roulette)</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+        }
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 200px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 10px;
+            resize: none;
+            font-size: 14px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        canvas {
+            background: #111;
+            border-radius: 8px;
+            border: 2px solid #444;
+        }
+        #winner {
+            margin-top: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #ffeb3b;
+            text-align: center;
+            min-height: 30px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="control-panel">
+            <h3>참가자 이름 입력</h3>
+            <textarea id="namesInput">참가자1
+참가자2
+참가자3
+참가자4
+참가자5</textarea>
+            <button onclick="startRace()">룰렛 시작!</button>
+            <div id="winner"></div>
+        </div>
+        <div>
+            <canvas id="rouletteCanvas" width="400" height="600"></canvas>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('rouletteCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let marbles = [];
+    let pegs = [];
+    let isRunning = false;
+    let animationId;
+
+    // 장애물(핀) 생성
+    function createPegs() {
+        pegs = [];
+        const rows = 8;
+        const startY = 120;
+        const spacingY = 50;
+
+        for (let r = 0; r < rows; r++) {
+            const cols = (r % 2 === 0) ? 5 : 6;
+            const spacingX = canvas.width / (cols + 1);
+            for (let c = 0; c < cols; c++) {
+                const x = spacingX * (c + 1) + (r % 2 === 0 ? 0 : spacingX / 2);
+                const y = startY + r * spacingY;
+                pegs.push({ x, y, radius: 6 });
+            }
+        }
+    }
+
+    function startRace() {
+        if (isRunning) return;
+
+        const text = document.getElementById('namesInput').value;
+        const names = text.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+
+        if (names.length === 0) {
+            alert('참가자를 한 명 이상 입력해주세요!');
+            return;
+        }
+
+        document.getElementById('winner').innerText = '';
+        createPegs();
+
+        marbles = names.map((name, index) => {
+            return {
+                name: name,
+                x: 50 + Math.random() * (canvas.width - 100),
+                y: 20 - index * 20, 
+                vx: (Math.random() - 0.5) * 2,
+                vy: 2 + Math.random() * 2,
+                radius: 12,
+                color: `hsl(${index * (360 / names.length)}, 80%, 60%)`,
+                finished: false
+            };
+        });
+
+        isRunning = true;
+        loop();
+    }
+
+    function update() {
+        let allFinished = true;
+
+        marbles.forEach(m => {
+            if (m.finished) return;
+
+            allFinished = false;
+
+            // 중력 및 이동
+            m.vy += 0.25; 
+            m.x += m.vx;
+            m.y += m.vy;
+
+            // 벽 충돌
+            if (m.x - m.radius < 0) {
+                m.x = m.radius;
+                m.vx *= -0.5;
+            } else if (m.x + m.radius > canvas.width) {
+                m.x = canvas.width - m.radius;
+                m.vx *= -0.5;
+            }
+
+            // 핀 충돌 체크
+            pegs.forEach(p => {
+                const dx = m.x - p.x;
+                const dy = m.y - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const minDist = m.radius + p.radius;
+
+                if (dist < minDist) {
+                    const angle = Math.atan2(dy, dx);
+                    const speed = Math.sqrt(m.vx * m.vx + m.vy * m.vy);
+                    
+                    m.x = p.x + Math.cos(angle) * minDist;
+                    m.y = p.y + Math.sin(angle) * minDist;
+
+                    const bounce = 0.6;
+                    m.vx = Math.cos(angle) * speed * bounce + (Math.random() - 0.5) * 3;
+                    m.vy = Math.sin(angle) * speed * bounce + Math.random() * 2;
+                }
+            });
+
+            // 결승선 통과 체크 (y = 570)
+            if (m.y >= 570) {
+                m.y = 570;
+                m.finished = true;
+                
+                // 첫 번째로 도착한 구슬을 우승자로 설정
+                const currentWinner = document.getElementById('winner').innerText;
+                if (!currentWinner) {
+                    document.getElementById('winner').innerText = `🏆 우승: ${m.name}!`;
+                }
+            }
+        });
+
+        if (allFinished) {
+            isRunning = false;
+            cancelAnimationFrame(animationId);
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 핀 그리기
+        ctx.fillStyle = '#666';
+        pegs.forEach(p => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 결승선 그리기
+        ctx.strokeStyle = '#ff4444';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.moveTo(0, 570);
+        ctx.lineTo(canvas.width, 570);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 구슬 그리기
+        marbles.forEach(m => {
+            ctx.beginPath();
+            ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+            ctx.fillStyle = m.color;
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 이름 텍스트
+            ctx.fillStyle = '#fff';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(m.name, m.x, m.y - m.radius - 4);
+        });
+    }
+
+    function loop() {
+        update();
+        draw();
+        if (isRunning) {
+            animationId = requestAnimationFrame(loop);
+        }
+    }
+
+    createPegs();
+    draw();
+</script>
+</body>
+</html>
